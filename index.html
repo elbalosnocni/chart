@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>Sơ Đồ Tổ Chức Nội Bộ</title>
-  <script src="https://d3js.org"></script>
-  <script src="https://jsdelivr.net"></script>
-  <script src="https://jsdelivr.net"></script>
-  <script defer src="https://jsdelivr.net"></script>
+  
+  <!-- Đã đổi sang nguồn cdnjs và unpkg để tránh lỗi chặn mạng jsdelivr -->
+  <script src="https://cloudflare.com"></script>
+  <script src="https://unpkg.com"></script>
+  <script src="https://unpkg.com"></script>
+  <script defer src="https://unpkg.com"></script>
   
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f4f7f6; overflow: hidden; }
@@ -76,7 +78,7 @@
 <div id="chart-container"></div>
 
 <script>
-  // DÁN URL GOOGLE APPS SCRIPT CỦA BẠN VÀO ĐÂY
+  // NHỚ DÁN ĐÚNG URL GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzCBz8ew2hbcJPY-DgQ72RBP6sPk_PZFYCt4NhHh2j4RdQGZgKnfgv30v_5smX_B026Iw/exec";
   
   let chart;
@@ -101,6 +103,10 @@
       showError("Vui lòng nhập số Căn cước công dân!");
       return;
     }
+    if (GAS_API_URL.includes("THAY_URL_WEB_APP")) {
+      showError("Lỗi cấu hình: Bạn chưa dán URL Google Apps Script vào file index.html!");
+      return;
+    }
     document.getElementById('login-error').style.display = 'none';
     loadSystem(cccd);
   }
@@ -117,7 +123,7 @@
   }
 
   async function initAI() {
-    if (aiLoaded) return;
+    if (aiLoaded || typeof faceapi === 'undefined') return;
     try {
       const MODEL_URL = 'https://github.io';
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
@@ -201,7 +207,13 @@
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('welcome-text').innerText = `Xin chào: ${result.user}`;
       
-      await initAI();
+      // Chạy AI ngầm không chặn quá trình vẽ sơ đồ
+      initAI();
+      
+      if (typeof d3 === 'undefined' || typeof d3.OrgChart === 'undefined') {
+        throw new Error("Không tải được thư viện vẽ sơ đồ từ mạng. Vui lòng tải lại trang!");
+      }
+
       const treeData = buildHierarchy(result.data);
 
       chart = new d3.OrgChart()
@@ -212,14 +224,11 @@
         .childrenMargin(d => 45)
         .compactMarginBetween(d => 25)
         .nodeContent(d => {
-          if (d.data.type === 'dept') {
-            return `<div class="node-card node-dept">
-                      <div class="name" style="font-size:15px; color:#1e3a8a;">${d.data.name}</div>
-                      <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div>
-                    </div>`;
-          }
-          const defaultAvatar = `https://ui-avatars.com{encodeURIComponent(d.data.name)}&background=cbd5e1&color=1e293b&size=150`;
-          const imgSrc = d.data.anh ? d.data.anh : defaultAvatar;
+  if (d.data.type === 'dept') {
+return <div class="node-card node-dept"> <div class="name" style="font-size:15px; color:#1e3a8a;">${d.data.name}</div> <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div> </div>;
+}
+const defaultAvatar = https://ui-avatars.com{encodeURIComponent(d.data.name)}&background=cbd5e1&color=1e293b&size=150;
+const imgSrc = d.data.anh ? d.data.anh : defaultAvatar;
 return <div class="node-card"> <img class="avatar-4x6" crossorigin="anonymous" src="${imgSrc}"  onload="autoCropFace4x6(this)"  onerror="this.src='${defaultAvatar}'"> <div class="info"> <div class="name" title="${d.data.name}">${d.data.name}</div> <div class="role">${d.data.role}</div> <div class="id-badge">Mã NV: ${d.data.manv}</div> </div> </div>;
 })
 .render();
@@ -227,7 +236,8 @@ chart.expandAll().fit();
 document.getElementById('loading').style.display = 'none';
 } catch (error) {
 document.getElementById('loading').style.display = 'none';
-showError("Lỗi kết nối máy chủ. Vui lòng thử lại!");
+showError(error.message || "Lỗi kết nối máy chủ. Vui lòng thử lại!");
+console.error(error);
 }
 }
 function filterChart(value) {
