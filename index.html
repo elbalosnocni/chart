@@ -72,10 +72,9 @@
 <div id="chart-container"></div>
 
 <!-- Đưa thư viện xuống cuối trang để không bao giờ làm treo nút đăng nhập -->
-<script src="https://cloudflare.com"></script>
-<script src="https://jsdelivr.net"></script>
-<script src="https://jsdelivr.net"></script>
-<script defer src="https://jsdelivr.net"></script>
+<!-- Thư viện vẽ sơ đồ: D3.js và d3-org-chart -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3"></script>
 
 <script>
   // DÁN ĐÚNG URL GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY
@@ -118,8 +117,8 @@
 
   function handleLogin() {
     const cccd = document.getElementById('cccd-input').value.trim();
-    if (!cccd) {
-      showError("Vui lòng nhập số Căn cước công dân!");
+    if (!/^\\d{12}$/.test(cccd)) {
+      showError("CCCD phải gồm đúng 12 chữ số!");
       return;
     }
     if (GAS_API_URL.includes("THAY_URL_WEB_APP")) {
@@ -143,39 +142,8 @@
     filterChart(this.value);
   });
 
-  async function initAI() {
-    if (aiLoaded || typeof faceapi === 'undefined') return;
-    try {
-      const MODEL_URL = 'https://github.io';
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-      aiLoaded = true;
-    } catch (e) {}
-  }
-
-  async function autoCropFace4x6(imgElement) {
-    if (!aiLoaded || !imgElement.src || imgElement.dataset.cropped) return;
-    imgElement.dataset.cropped = "true";
-    try {
-      const detection = await faceapi.detectSingleFace(imgElement, new faceapi.TinyFaceDetectorOptions());
-      if (detection) {
-        const box = detection.box;
-        const imgW = imgElement.naturalWidth;
-        const imgH = imgElement.naturalHeight;
-        let cropH = box.height * 2.6;
-        let cropW = cropH * (2 / 3);
-        if (cropW > imgW) { cropW = imgW; cropH = cropW * 1.5; }
-        if (cropH > imgH) { cropH = imgH; cropW = cropH * (2 / 3); }
-        let cropX = Math.max(0, Math.min((box.x + box.width / 2) - (cropW / 2), imgW - cropW));
-        let cropY = Math.max(0, Math.min(box.y - (box.height * 0.45), imgH - cropH));
-
-        const canvas = document.createElement('canvas');
-        canvas.width = 200; canvas.height = 300;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imgElement, cropX, cropY, cropW, cropH, 0, 0, 200, 300);
-        imgElement.src = canvas.toDataURL('image/jpeg', 0.9);
-      }
-    } catch (e) {}
-  }
+  // Tạm không dùng nhận diện khuôn mặt: model URL cũ không hợp lệ.
+  // Ảnh nhân viên vẫn hiển thị theo khung 4x6 bằng object-fit: cover.
 
   function buildHierarchy(employees) {
     const nodes = [{ id: 'COMPANY', parentId: '', name: 'BAN GIÁM ĐỐC / CÔNG TY', type: 'dept' }];
@@ -212,7 +180,12 @@
   async function loadSystem(cccd) {
     document.getElementById('loading').style.display = 'flex';
     try {
-      const response = await fetch(`${GAS_API_URL}?cccd=${encodeURIComponent(cccd)}`);
+      const response = await fetch(`${GAS_API_URL}?cccd=${encodeURIComponent(cccd)}`, {
+        method: 'GET',
+        redirect: 'follow',
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error(`Máy chủ trả về lỗi HTTP ${response.status}`);
       const result = await response.json();
 
       if (result.error) {
@@ -225,9 +198,8 @@
       safeStorage.set('org_cccd', cccd);
       document.getElementById('login-screen').style.display = 'none';
 document.getElementById('welcome-text').innerText = Xin chào: ${result.user};
-initAI();
 if (typeof d3 === 'undefined' || typeof d3.OrgChart === 'undefined') {
-throw new Error("Mạng đang chặn thư viện vẽ biểu đồ (d3-org-chart). Hãy kiểm tra kết nối mạng!");
+  throw new Error("Không tải được thư viện sơ đồ tổ chức. Hãy kiểm tra kết nối tới d3js.org và cdn.jsdelivr.net.");
 }
 const treeData = buildHierarchy(result.data);
 chart = new d3.OrgChart()
@@ -238,14 +210,28 @@ chart = new d3.OrgChart()
 .childrenMargin(d => 45)
 .compactMarginBetween(d => 25)
 .nodeContent(d => {
-if (d.data.type === 'dept') {
-return <div class="node-card node-dept"> <div class="name" style="font-size:15px; color:#1e3a8a;">${d.data.name}</div> <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div> </div>;
-}
-const defaultAvatar = https://ui-avatars.com{encodeURIComponent(d.data.name)}&background=cbd5e1&color=1e293b&size=150;
-const imgSrc = d.data.anh ? d.data.anh : defaultAvatar;
-return <div class="node-card"> <img class="avatar-4x6" crossorigin="anonymous" src="${imgSrc}"  onload="autoCropFace4x6(this)"  onerror="this.src='${defaultAvatar}'"> <div class="info"> <div class="name" title="${d.data.name}">${d.data.name}</div> <div class="role">${d.data.role}</div> <div class="id-badge">Mã NV: ${d.data.manv}</div> </div> </div>;
-})
-.render();
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+        if (d.data.type === 'dept') {
+          return `<div class="node-card node-dept">
+            <div class="name" style="font-size:15px;color:#1e3a8a;">${esc(d.data.name)}</div>
+            <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div>
+          </div>`;
+        }
+        const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(d.data.name || 'NV')}&background=cbd5e1&color=1e293b&size=150`;
+        const imgSrc = d.data.anh || defaultAvatar;
+        return `<div class="node-card">
+          <img class="avatar-4x6" crossorigin="anonymous" src="${esc(imgSrc)}"
+               onerror="this.onerror=null;this.src='${defaultAvatar}'">
+          <div class="info">
+            <div class="name" title="${esc(d.data.name)}">${esc(d.data.name)}</div>
+            <div class="role">${esc(d.data.role)}</div>
+            <div class="id-badge">Mã NV: ${esc(d.data.manv)}</div>
+          </div>
+        </div>`;
+      })
+      .render();
 chart.expandAll().fit();
 document.getElementById('loading').style.display = 'none';
 } catch (error) {
