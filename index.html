@@ -6,12 +6,6 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Sơ Đồ Tổ Chức Nội Bộ</title>
   
-  <!-- Đã đổi sang nguồn cdnjs và unpkg để tránh lỗi chặn mạng jsdelivr -->
-  <script src="https://cloudflare.com"></script>
-  <script src="https://unpkg.com"></script>
-  <script src="https://unpkg.com"></script>
-  <script defer src="https://unpkg.com"></script>
-  
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f4f7f6; overflow: hidden; }
     
@@ -54,8 +48,8 @@
   <div class="login-box">
     <h2>SƠ ĐỒ TỔ CHỨC NỘI BỘ</h2>
     <p>Nhập số Căn cước công dân của bạn để truy cập</p>
-    <input type="text" id="cccd-input" inputmode="numeric" placeholder="Nhập đủ 12 số CCCD..." onkeypress="if(event.key==='Enter') handleLogin()">
-    <button onclick="handleLogin()">Xác thực & Xem sơ đồ</button>
+    <input type="text" id="cccd-input" inputmode="numeric" placeholder="Nhập đủ 12 số CCCD...">
+    <button id="login-btn">Xác thực & Xem sơ đồ</button>
     <div id="login-error"></div>
   </div>
 </div>
@@ -70,19 +64,38 @@
     <div id="welcome-text"></div>
   </div>
   <div class="header-actions">
-    <input type="text" id="search-box" placeholder="Tìm theo tên, Mã NV hoặc chức vụ..." onkeyup="filterChart(this.value)">
-    <button id="logout-btn" onclick="logout()">Thoát</button>
+    <input type="text" id="search-box" placeholder="Tìm theo tên, Mã NV hoặc chức vụ...">
+    <button id="logout-btn">Thoát</button>
   </div>
 </div>
 
 <div id="chart-container"></div>
 
+<!-- Đưa thư viện xuống cuối trang để không bao giờ làm treo nút đăng nhập -->
+<script src="https://cloudflare.com"></script>
+<script src="https://jsdelivr.net"></script>
+<script src="https://jsdelivr.net"></script>
+<script defer src="https://jsdelivr.net"></script>
+
 <script>
-  // NHỚ DÁN ĐÚNG URL GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY
+  // DÁN ĐÚNG URL GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzCBz8ew2hbcJPY-DgQ72RBP6sPk_PZFYCt4NhHh2j4RdQGZgKnfgv30v_5smX_B026Iw/exec";
   
-  let chart;
+  let chart = null;
   let aiLoaded = false;
+
+  // Hàm lưu trữ an toàn (chống lỗi Tracking Prevention của trình duyệt)
+  const safeStorage = {
+    get: function(key) {
+      try { return sessionStorage.getItem(key); } catch (e) { return null; }
+    },
+    set: function(key, val) {
+      try { sessionStorage.setItem(key, val); } catch (e) {}
+    },
+    remove: function(key) {
+      try { sessionStorage.removeItem(key); } catch (e) {}
+    }
+  };
 
   const ROLE_RANK = {
     'DGD': 1, 'DIRECTOR': 2, 'MANAGER': 3, 'CHIEF': 4, 
@@ -97,6 +110,12 @@
     return 99;
   }
 
+  function showError(msg) {
+    const errEl = document.getElementById('login-error');
+    errEl.innerText = msg;
+    errEl.style.display = 'block';
+  }
+
   function handleLogin() {
     const cccd = document.getElementById('cccd-input').value.trim();
     if (!cccd) {
@@ -104,23 +123,25 @@
       return;
     }
     if (GAS_API_URL.includes("THAY_URL_WEB_APP")) {
-      showError("Lỗi cấu hình: Bạn chưa dán URL Google Apps Script vào file index.html!");
+      showError("Bạn chưa dán đường link Google Apps Script vào file index.html!");
       return;
     }
     document.getElementById('login-error').style.display = 'none';
     loadSystem(cccd);
   }
 
-  function showError(msg) {
-    const errEl = document.getElementById('login-error');
-    errEl.innerText = msg;
-    errEl.style.display = 'block';
-  }
-
-  function logout() {
-    sessionStorage.removeItem('org_cccd');
+  // Gán sự kiện trực tiếp bằng JavaScript (không dùng onclick trên HTML)
+  document.getElementById('login-btn').addEventListener('click', handleLogin);
+  document.getElementById('cccd-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleLogin();
+  });
+  document.getElementById('logout-btn').addEventListener('click', function() {
+    safeStorage.remove('org_cccd');
     location.reload();
-  }
+  });
+  document.getElementById('search-box').addEventListener('keyup', function() {
+    filterChart(this.value);
+  });
 
   async function initAI() {
     if (aiLoaded || typeof faceapi === 'undefined') return;
@@ -128,9 +149,7 @@
       const MODEL_URL = 'https://github.io';
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
       aiLoaded = true;
-    } catch (e) {
-      console.warn("AI không tải được, dùng chế độ căn trên mặc định.");
-    }
+    } catch (e) {}
   }
 
   async function autoCropFace4x6(imgElement) {
@@ -199,32 +218,27 @@
       if (result.error) {
         document.getElementById('loading').style.display = 'none';
         showError(result.error);
-        sessionStorage.removeItem('org_cccd');
+        safeStorage.remove('org_cccd');
         return;
       }
 
-      sessionStorage.setItem('org_cccd', cccd);
+      safeStorage.set('org_cccd', cccd);
       document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('welcome-text').innerText = `Xin chào: ${result.user}`;
-      
-      // Chạy AI ngầm không chặn quá trình vẽ sơ đồ
-      initAI();
-      
-      if (typeof d3 === 'undefined' || typeof d3.OrgChart === 'undefined') {
-        throw new Error("Không tải được thư viện vẽ sơ đồ từ mạng. Vui lòng tải lại trang!");
-      }
-
-      const treeData = buildHierarchy(result.data);
-
-      chart = new d3.OrgChart()
-        .container('#chart-container')
-        .data(treeData)
-        .nodeWidth(d => d.data.type === 'dept' ? 220 : 260)
-        .nodeHeight(d => d.data.type === 'dept' ? 70 : 115)
-        .childrenMargin(d => 45)
-        .compactMarginBetween(d => 25)
-        .nodeContent(d => {
-  if (d.data.type === 'dept') {
+document.getElementById('welcome-text').innerText = Xin chào: ${result.user};
+initAI();
+if (typeof d3 === 'undefined' || typeof d3.OrgChart === 'undefined') {
+throw new Error("Mạng đang chặn thư viện vẽ biểu đồ (d3-org-chart). Hãy kiểm tra kết nối mạng!");
+}
+const treeData = buildHierarchy(result.data);
+chart = new d3.OrgChart()
+.container('#chart-container')
+.data(treeData)
+.nodeWidth(d => d.data.type === 'dept' ? 220 : 260)
+.nodeHeight(d => d.data.type === 'dept' ? 70 : 115)
+.childrenMargin(d => 45)
+.compactMarginBetween(d => 25)
+.nodeContent(d => {
+if (d.data.type === 'dept') {
 return <div class="node-card node-dept"> <div class="name" style="font-size:15px; color:#1e3a8a;">${d.data.name}</div> <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div> </div>;
 }
 const defaultAvatar = https://ui-avatars.com{encodeURIComponent(d.data.name)}&background=cbd5e1&color=1e293b&size=150;
@@ -237,7 +251,6 @@ document.getElementById('loading').style.display = 'none';
 } catch (error) {
 document.getElementById('loading').style.display = 'none';
 showError(error.message || "Lỗi kết nối máy chủ. Vui lòng thử lại!");
-console.error(error);
 }
 }
 function filterChart(value) {
@@ -257,9 +270,9 @@ d._expanded = true;
 }
 chart.data(data).render().fit();
 }
-window.onload = () => {
-const savedCCCD = sessionStorage.getItem('org_cccd');
+window.addEventListener('load', () => {
+const savedCCCD = safeStorage.get('org_cccd');
 if (savedCCCD) {
 loadSystem(savedCCCD);
 }
-};
+});
