@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Sơ Đồ Tổ Chức Nội Bộ</title>
+  <script src="https://d3js.org"></script>
+  <script src="https://jsdelivr.net"></script>
+  <script src="https://jsdelivr.net"></script>
+  <script defer src="https://jsdelivr.net"></script>
+  
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f4f7f6; overflow: hidden; }
+    
+    /* Màn hình đăng nhập */
+    #login-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+    .login-box { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 330px; text-align: center; }
+    .login-box h2 { margin: 0 0 8px; color: #1e3a8a; font-size: 20px; }
+    .login-box p { margin: 0 0 20px; color: #64748b; font-size: 13px; }
+    .login-box input { width: 100%; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 15px; box-sizing: border-box; margin-bottom: 14px; outline: none; text-align: center; letter-spacing: 1px; }
+    .login-box input:focus { border-color: #2563eb; }
+    .login-box button { width: 100%; padding: 11px; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .login-box button:hover { background: #1d4ed8; }
+    #login-error { color: #dc2626; font-size: 13px; margin-top: 12px; display: none; font-weight: 500; }
+
+    /* Giao diện chính */
+    #header { background: #1e3a8a; color: white; padding: 10px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    #header h2 { margin: 0; font-size: 17px; }
+    #welcome-text { font-size: 12px; color: #bfdbfe; margin-top: 2px; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+    #search-box { padding: 8px 12px; border-radius: 6px; border: none; width: 240px; font-size: 14px; }
+    #logout-btn { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #logout-btn:hover { background: rgba(255,255,255,0.25); }
+    #chart-container { width: 100vw; height: calc(100vh - 56px); }
+    
+    /* Thẻ nhân viên & ảnh 4x6 */
+    .node-card { background: white; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); border-top: 4px solid #2563eb; padding: 10px; display: flex; align-items: center; gap: 12px; height: 100%; box-sizing: border-box; }
+    .node-dept { background: #eff6ff; border-top: 4px solid #1d4ed8; justify-content: center; text-align: center; flex-direction: column; }
+    .avatar-4x6 { width: 60px; height: 90px; border-radius: 4px; object-fit: cover; object-position: top center; background: #e2e8f0; flex-shrink: 0; border: 1px solid #cbd5e1; }
+    .info { text-align: left; overflow: hidden; }
+    .name { font-weight: 700; font-size: 13px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .role { font-size: 12px; color: #2563eb; font-weight: 600; margin-top: 3px; }
+    .id-badge { font-size: 11px; color: #64748b; margin-top: 4px; background: #f1f5f9; display: inline-block; padding: 2px 6px; border-radius: 4px; }
+    #loading { position: fixed; inset: 0; background: rgba(255,255,255,0.92); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 999; font-weight: 600; color: #1e3a8a; }
+  </style>
+</head>
+<body>
+
+<!-- Màn hình đăng nhập bằng CCCD -->
+<div id="login-screen">
+  <div class="login-box">
+    <h2>SƠ ĐỒ TỔ CHỨC NỘI BỘ</h2>
+    <p>Nhập số Căn cước công dân của bạn để truy cập</p>
+    <input type="text" id="cccd-input" inputmode="numeric" placeholder="Nhập đủ 12 số CCCD..." onkeypress="if(event.key==='Enter') handleLogin()">
+    <button onclick="handleLogin()">Xác thực & Xem sơ đồ</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- Màn hình tải dữ liệu -->
+<div id="loading">Đang kiểm tra thông tin & tải sơ đồ tổ chức...</div>
+
+<!-- Giao diện sơ đồ -->
+<div id="header">
+  <div>
+    <h2>SƠ ĐỒ TỔ CHỨC NHÂN SỰ</h2>
+    <div id="welcome-text"></div>
+  </div>
+  <div class="header-actions">
+    <input type="text" id="search-box" placeholder="Tìm theo tên, Mã NV hoặc chức vụ..." onkeyup="filterChart(this.value)">
+    <button id="logout-btn" onclick="logout()">Thoát</button>
+  </div>
+</div>
+
+<div id="chart-container"></div>
+
+<script>
+  // DÁN URL GOOGLE APPS SCRIPT CỦA BẠN VÀO ĐÂY
+  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzCBz8ew2hbcJPY-DgQ72RBP6sPk_PZFYCt4NhHh2j4RdQGZgKnfgv30v_5smX_B026Iw/exec";
+  
+  let chart;
+  let aiLoaded = false;
+
+  const ROLE_RANK = {
+    'DGD': 1, 'DIRECTOR': 2, 'MANAGER': 3, 'CHIEF': 4, 
+    'VICE CHIEF': 5, 'SENIOR OFFICER': 6, 'OFFICER': 7, 'OFFICE STAFF': 8
+  };
+
+  function getRank(role) {
+    const upper = (role || '').toUpperCase();
+    for (let key in ROLE_RANK) {
+      if (upper.includes(key)) return ROLE_RANK[key];
+    }
+    return 99;
+  }
+
+  function handleLogin() {
+    const cccd = document.getElementById('cccd-input').value.trim();
+    if (!cccd) {
+      showError("Vui lòng nhập số Căn cước công dân!");
+      return;
+    }
+    document.getElementById('login-error').style.display = 'none';
+    loadSystem(cccd);
+  }
+
+  function showError(msg) {
+    const errEl = document.getElementById('login-error');
+    errEl.innerText = msg;
+    errEl.style.display = 'block';
+  }
+
+  function logout() {
+    sessionStorage.removeItem('org_cccd');
+    location.reload();
+  }
+
+  async function initAI() {
+    if (aiLoaded) return;
+    try {
+      const MODEL_URL = 'https://github.io';
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      aiLoaded = true;
+    } catch (e) {
+      console.warn("AI không tải được, dùng chế độ căn trên mặc định.");
+    }
+  }
+
+  async function autoCropFace4x6(imgElement) {
+    if (!aiLoaded || !imgElement.src || imgElement.dataset.cropped) return;
+    imgElement.dataset.cropped = "true";
+    try {
+      const detection = await faceapi.detectSingleFace(imgElement, new faceapi.TinyFaceDetectorOptions());
+      if (detection) {
+        const box = detection.box;
+        const imgW = imgElement.naturalWidth;
+        const imgH = imgElement.naturalHeight;
+        let cropH = box.height * 2.6;
+        let cropW = cropH * (2 / 3);
+        if (cropW > imgW) { cropW = imgW; cropH = cropW * 1.5; }
+        if (cropH > imgH) { cropH = imgH; cropW = cropH * (2 / 3); }
+        let cropX = Math.max(0, Math.min((box.x + box.width / 2) - (cropW / 2), imgW - cropW));
+        let cropY = Math.max(0, Math.min(box.y - (box.height * 0.45), imgH - cropH));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 200; canvas.height = 300;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgElement, cropX, cropY, cropW, cropH, 0, 0, 200, 300);
+        imgElement.src = canvas.toDataURL('image/jpeg', 0.9);
+      }
+    } catch (e) {}
+  }
+
+  function buildHierarchy(employees) {
+    const nodes = [{ id: 'COMPANY', parentId: '', name: 'BAN GIÁM ĐỐC / CÔNG TY', type: 'dept' }];
+    const addedDepts = new Set();
+    const addedSubDepts = new Set();
+
+    employees.sort((a, b) => getRank(a.chucvu) - getRank(b.chucvu));
+
+    employees.forEach(emp => {
+      const deptId = 'DEPT_' + emp.phongban;
+      if (emp.phongban && !addedDepts.has(deptId)) {
+        addedDepts.add(deptId);
+        nodes.push({ id: deptId, parentId: 'COMPANY', name: emp.phongban, type: 'dept' });
+      }
+
+      let parentForEmp = deptId;
+      if (emp.bophan && emp.bophan !== emp.phongban) {
+        const subId = deptId + '_SUB_' + emp.bophan;
+        if (!addedSubDepts.has(subId)) {
+          addedSubDepts.add(subId);
+          nodes.push({ id: subId, parentId: deptId, name: emp.bophan, type: 'dept' });
+        }
+        parentForEmp = subId;
+      }
+
+      nodes.push({
+        id: emp.manv, parentId: parentForEmp, name: emp.hoten,
+        role: emp.chucvu, manv: emp.manv, anh: emp.anh, type: 'emp'
+      });
+    });
+    return nodes;
+  }
+
+  async function loadSystem(cccd) {
+    document.getElementById('loading').style.display = 'flex';
+    try {
+      const response = await fetch(`${GAS_API_URL}?cccd=${encodeURIComponent(cccd)}`);
+      const result = await response.json();
+
+      if (result.error) {
+        document.getElementById('loading').style.display = 'none';
+        showError(result.error);
+        sessionStorage.removeItem('org_cccd');
+        return;
+      }
+
+      sessionStorage.setItem('org_cccd', cccd);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('welcome-text').innerText = `Xin chào: ${result.user}`;
+      
+      await initAI();
+      const treeData = buildHierarchy(result.data);
+
+      chart = new d3.OrgChart()
+        .container('#chart-container')
+        .data(treeData)
+        .nodeWidth(d => d.data.type === 'dept' ? 220 : 260)
+        .nodeHeight(d => d.data.type === 'dept' ? 70 : 115)
+        .childrenMargin(d => 45)
+        .compactMarginBetween(d => 25)
+        .nodeContent(d => {
+          if (d.data.type === 'dept') {
+            return `<div class="node-card node-dept">
+                      <div class="name" style="font-size:15px; color:#1e3a8a;">${d.data.name}</div>
+                      <div class="id-badge">${d.data._totalSubordinates || 0} nhân sự</div>
+                    </div>`;
+          }
+          const defaultAvatar = `https://ui-avatars.com{encodeURIComponent(d.data.name)}&background=cbd5e1&color=1e293b&size=150`;
+          const imgSrc = d.data.anh ? d.data.anh : defaultAvatar;
+return <div class="node-card"> <img class="avatar-4x6" crossorigin="anonymous" src="${imgSrc}"  onload="autoCropFace4x6(this)"  onerror="this.src='${defaultAvatar}'"> <div class="info"> <div class="name" title="${d.data.name}">${d.data.name}</div> <div class="role">${d.data.role}</div> <div class="id-badge">Mã NV: ${d.data.manv}</div> </div> </div>;
+})
+.render();
+chart.expandAll().fit();
+document.getElementById('loading').style.display = 'none';
+} catch (error) {
+document.getElementById('loading').style.display = 'none';
+showError("Lỗi kết nối máy chủ. Vui lòng thử lại!");
+}
+}
+function filterChart(value) {
+if (!chart) return;
+const data = chart.data();
+data.forEach(d => { d._highlighted = false; d._expanded = false; });
+if (value.trim() !== '') {
+const term = value.toLowerCase();
+data.forEach(d => {
+if ((d.name && d.name.toLowerCase().includes(term)) ||
+(d.manv && d.manv.toLowerCase().includes(term)) ||
+(d.role && d.role.toLowerCase().includes(term))) {
+d._highlighted = true;
+d._expanded = true;
+}
+});
+}
+chart.data(data).render().fit();
+}
+window.onload = () => {
+const savedCCCD = sessionStorage.getItem('org_cccd');
+if (savedCCCD) {
+loadSystem(savedCCCD);
+}
+};
